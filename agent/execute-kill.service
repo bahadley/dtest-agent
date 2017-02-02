@@ -1,0 +1,10 @@
+[Unit]
+Description=Execute-Kill-Agent
+After=network.target
+
+[Service]
+Restart=always
+ExecStart=/usr/local/bin/execute-kill.py
+
+[Install]
+WantedBy=multi-user.target
