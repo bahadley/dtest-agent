@@ -1,0 +1,11 @@
+[Unit]
+Description=TCPLife-Agent
+After=network.target
+
+[Service]
+Restart=always
+WorkingDirectory=/usr/local/bin
+ExecStart=/usr/local/bin/tcplife-trace-agent.py
+
+[Install]
+WantedBy=multi-user.target
