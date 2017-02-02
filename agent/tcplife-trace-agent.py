@@ -3,6 +3,7 @@
 from bcc import BPF
 import ctypes as ct
 from json import JSONDecoder, JSONEncoder
+import pika
 from socket import inet_ntop, ntohs, AF_INET
 from struct import pack
 from subprocess import Popen, PIPE
@@ -25,14 +26,41 @@ class Data_ipv4(ct.Structure):
         ("task", ct.c_char * TASK_COMM_LEN)
     ]
 
+NODE = "amqp://monitor:monitor@192.168.222.59:5672/monitor"
+
 start_ts = 0
 events = []
 
-
 def main():
-    config = argv[1] if len(argv) > 1 else '{"duration":10}'
-    print config
-    params = JSONDecoder().decode(config) 
+    parameters = pika.URLParameters(NODE)
+    connection = pika.BlockingConnection(parameters)
+
+    channel = connection.channel()
+
+    channel.exchange_declare(exchange='monitor',
+                             type='topic')
+
+    result = channel.queue_declare(exclusive=True)
+    queue_name = result.method.queue
+
+    channel.queue_bind(exchange='monitor',
+                       queue=queue_name,
+                       routing_key='etcd1.sense.tcplife')
+
+
+    #def callback(ch, method, properties, body):
+    #    print(" [x] %r:%r" % (method.routing_key, body))
+
+    channel.basic_consume(callback,
+                          queue=queue_name,
+                          no_ack=True)
+
+    channel.start_consuming()
+
+
+def callback(ch, method, properties, body):
+    #config = argv[1] if len(argv) > 1 else '{"duration":10}'
+    params = JSONDecoder().decode(body) 
     duration = params["duration"]
 
     # initialize BPF
@@ -45,7 +73,24 @@ def main():
         b.kprobe_poll(timeout=100)
 
     doc = JSONEncoder().encode(events)
-    print("%s" % doc)
+    send_msg(doc)
+
+
+def send_msg(msg):
+    parameters = pika.URLParameters(NODE)
+    connection = pika.BlockingConnection(parameters)
+
+    channel = connection.channel()
+
+    channel.exchange_declare(exchange='monitor',
+                             type='topic')
+
+
+    channel.basic_publish(exchange='monitor',
+                          routing_key='controller.trace.tcplife',
+                          body=msg)
+
+    connection.close()
 
 
 # process event
@@ -75,7 +120,7 @@ def bpf_text():
         code = f.read()
 
     # code substitutions
-    p = Popen(["pgrep", "no-process"], stdout=PIPE)
+    p = Popen(["pgrep", "etcd"], stdout=PIPE)
     out, err = p.communicate()
     if out:
         pids = out.splitlines()
